@@ -2,28 +2,18 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"time"
 )
 
-type Event struct {
-	Type, Action, Timestamp string
-	Id                      int
-}
-
-type EventsCollection struct {
-	Events []Event
-}
-
-var baseUrl string
+var baseUrl, esHost string
 
 func main() {
 	baseUrl = os.Getenv("BASE_URL")
+	esHost = os.Getenv("ES_HOST")
+
 	go electricityPing()
 
 	f, logger := setupLogger("events")
@@ -32,23 +22,9 @@ func main() {
 	for {
 		select {
 		case <-t.C:
-			getLightEvents(logger)
+			getEvents(logger)
 		}
 	}
-}
-
-func getLightEvents(l *log.Logger) {
-	resp, err := http.Get(baseUrl + "/lights")
-	if err != nil {
-		log.Fatalf("Could not GET events: %v", err)
-	}
-	eventsStr, _ := ioutil.ReadAll(resp.Body)
-	defer resp.Body.Close()
-	var events EventsCollection
-	if err := json.Unmarshal(eventsStr, &events); err != nil {
-		l.Printf("Could not unmarshall %s: %v", eventsStr, err)
-	}
-	fmt.Println(events)
 }
 
 func electricityPing() {
@@ -62,6 +38,7 @@ func electricityPing() {
 			resp, err := http.Get(url)
 			if err != nil {
 				logger.Printf("error getting %v: %v", url, err)
+				continue
 			}
 			logger.Printf("Call to %v responded with %v", url, resp.StatusCode)
 		}
