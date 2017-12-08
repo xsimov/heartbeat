@@ -8,7 +8,10 @@ import (
 	"time"
 )
 
-var baseUrl, esHost string
+var (
+	baseUrl, esHost string
+	evLogger        *log.Logger
+)
 
 func main() {
 	baseUrl = os.Getenv("BASE_URL")
@@ -16,7 +19,7 @@ func main() {
 
 	go electricityPing()
 
-	f, logger := setupLogger("events")
+	f, evLogger := setupLogger("events")
 	defer f.Close()
 	t := time.NewTicker(1 * time.Second)
 	for {
@@ -28,7 +31,6 @@ func main() {
 }
 
 func electricityPing() {
-	f, logger := setupLogger("electricityPing")
 	defer f.Close()
 	url := baseUrl + "/electricity"
 	t := time.NewTicker(5 * time.Second)

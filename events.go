@@ -4,38 +4,63 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
 
 type Event struct {
-	Type, Action string
-	Timestamp    time.Time
+	Type         string    `json:"type"`
+	Action       string    `json:"action"`
+	RegisteredAt time.Time `json:"registered_at"`
+	EventId      int       `json:"event_id"`
 }
 
 type EventsCollection struct {
 	Events []Event
 }
 
-var evLogger *log.Logger
+type maxIdResponse struct {
+	Aggregations struct {
+		Max_id struct {
+			Value float32
+		}
+	}
+}
 
-func getEvents(l *log.Logger) {
-	evLogger = l
-	resp, err := http.Get(baseUrl + "/events")
+func getEvents() {
+	resp, err := http.Get(baseUrl + "/events?from=" + getLastId())
 	if err != nil {
 		evLogger.Printf("Could not GET events: %v", err)
 		return
 	}
-	eventsStr, _ := ioutil.ReadAll(resp.Body)
+	body, _ := ioutil.ReadAll(resp.Body)
 	defer resp.Body.Close()
-	var events EventsCollection
+	events := unmarshalEvents(body)
+	insertEvents(events)
+}
+
+func unmarshalEvents(eventsStr []byte) (events EventsCollection) {
 	if err := json.Unmarshal(eventsStr, &events); err != nil {
 		evLogger.Printf("Could not unmarshall %s: %v", eventsStr, err)
+		return EventsCollection{}
+	}
+	return
+}
+
+func getLastId() string {
+	query := strings.NewReader(`{"aggs": {"max_id": { "max": { "field": "event_id" }}}, "size": 0}`)
+	res, err := http.Post(esHost+"/events/_search", "application/json", query)
+	if err != nil {
+		evLogger.Printf("elasticsearch server is unreachable: %v", err)
 		return
 	}
-	insertEvents(events)
+	body, _ := ioutil.ReadAll(res.Body)
+	defer res.Body.Close()
+	var jsonResponse maxIdResponse
+	err = json.Unmarshal(body, &jsonResponse)
+	return strconv.Itoa(int(jsonResponse.Aggregations.Max_id.Value))
 }
 
 func insertEvents(ec EventsCollection) {
