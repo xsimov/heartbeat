@@ -29,38 +29,42 @@ type maxIdResponse struct {
 	}
 }
 
-func getEvents() {
+func getEvents() EventsCollection {
 	resp, err := http.Get(baseUrl + "/events?from=" + getLastId())
 	if err != nil {
-		evLogger.Printf("Could not GET events: %v", err)
-		return
+		evLogger.Printf("could not GET events: %v", err)
+		return EventsCollection{}
 	}
 	body, _ := ioutil.ReadAll(resp.Body)
 	defer resp.Body.Close()
-	events := unmarshalEvents(body)
-	insertEvents(events)
+	return unmarshalEvents(body)
 }
 
 func unmarshalEvents(eventsStr []byte) (events EventsCollection) {
 	if err := json.Unmarshal(eventsStr, &events); err != nil {
-		evLogger.Printf("Could not unmarshall %s: %v", eventsStr, err)
+		evLogger.Printf("could not unmarshall %s: %v", eventsStr, err)
 		return EventsCollection{}
 	}
 	return
 }
 
-func getLastId() string {
-	query := strings.NewReader(`{"aggs": {"max_id": { "max": { "field": "event_id" }}}, "size": 0}`)
-	res, err := http.Post(esHost+"/events/_search", "application/json", query)
-	if err != nil {
-		evLogger.Printf("elasticsearch server is unreachable: %v", err)
-		return
+func processEvents(ec EventsCollection) {
+	for _, e := range ec.Events {
+		url := composeEventURL(e)
+		_, err := http.Get(url)
+		if err != nil {
+			evLogger.Printf("could not process event %v: %v", e, err)
+			return
+		}
 	}
-	body, _ := ioutil.ReadAll(res.Body)
-	defer res.Body.Close()
-	var jsonResponse maxIdResponse
-	err = json.Unmarshal(body, &jsonResponse)
-	return strconv.Itoa(int(jsonResponse.Aggregations.Max_id.Value))
+}
+
+func composeEventURL(e Event) string {
+	action := 0
+	if e.Action == "on" {
+		action = 1
+	}
+	return arduinoHost + "/" + e.Type + "/4/" + strconv.Itoa(action)
 }
 
 func insertEvents(ec EventsCollection) {
@@ -86,4 +90,22 @@ func bulkInsert(b string) {
 	bd, _ := ioutil.ReadAll(res.Body)
 	defer res.Body.Close()
 	evLogger.Println(res.StatusCode, string(bd))
+}
+
+func getLastId() string {
+	query := strings.NewReader(`{"aggs": {"max_id": { "max": { "field": "event_id" }}}, "size": 0}`)
+	res, err := http.Post(esHost+"/events/_search", "application/json", query)
+	if err != nil {
+		evLogger.Printf("elasticsearch server is unreachable: %v", err)
+		return ""
+	}
+	body, _ := ioutil.ReadAll(res.Body)
+	defer res.Body.Close()
+	var jR maxIdResponse
+	err := json.Unmarshal(body, &jR)
+	if err != nil {
+		evLogger.Printf("could not unmarshal ES response: %q", body)
+		return ""
+	}
+	return strconv.Itoa(int(jR.Aggregations.Max_id.Value))
 }

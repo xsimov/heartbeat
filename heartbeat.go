@@ -1,4 +1,4 @@
-// Pings a server every 5 seconds and gets events from it
+// Tickers to get events from a server and ping it for electricity
 package main
 
 import (
@@ -9,28 +9,34 @@ import (
 )
 
 var (
-	baseUrl, esHost string
-	evLogger        *log.Logger
+	baseUrl, esHost, arduinoHost string
+	evLogger                     *log.Logger
 )
 
 func main() {
 	baseUrl = os.Getenv("BASE_URL")
 	esHost = os.Getenv("ES_HOST")
+	arduinoHost = os.Getenv("ARDUINO_HOST")
 
 	go electricityPing()
 
-	f, evLogger := setupLogger("events")
+	var f *os.File
+	f, evLogger = setupLogger("events")
 	defer f.Close()
+
 	t := time.NewTicker(1 * time.Second)
 	for {
 		select {
 		case <-t.C:
-			getEvents(logger)
+			ec := getEvents()
+			insertEvents(ec)
+			processEvents(ec)
 		}
 	}
 }
 
 func electricityPing() {
+	f, logger := setupLogger("electricityPing")
 	defer f.Close()
 	url := baseUrl + "/electricity"
 	t := time.NewTicker(5 * time.Second)
